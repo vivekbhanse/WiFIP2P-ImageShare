@@ -5,9 +5,7 @@ import android.net.wifi.p2p.WifiP2pDeviceList
 import android.net.wifi.p2p.WifiP2pManager.PeerListListener
 import android.util.Log
 
-/**
- * Created by ash on 14/2/18.
- */
+
 class MyPeerListener(var mainActivity: MainActivity?) : PeerListListener {
     private val peers: List<WifiP2pDevice> = ArrayList()
 

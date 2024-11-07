@@ -10,14 +10,17 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
+import android.location.LocationManager
 import android.net.Uri
 import android.net.wifi.WpsInfo
 import android.net.wifi.p2p.WifiP2pConfig
 import android.net.wifi.p2p.WifiP2pDevice
 import android.net.wifi.p2p.WifiP2pInfo
 import android.net.wifi.p2p.WifiP2pManager
+import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
+import android.provider.Settings
 import android.util.Base64
 import android.util.Log
 import android.view.View
@@ -35,11 +38,11 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
 import com.bumptech.glide.request.target.BitmapImageViewTarget
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
+
 
 class MainActivity : AppCompatActivity(), View.OnClickListener,
     WifiP2pManager.ConnectionInfoListener {
@@ -82,30 +85,51 @@ class MainActivity : AppCompatActivity(), View.OnClickListener,
     }
 
     private fun checkLocationPermissions() {
+        // Check if ACCESS_FINE_LOCATION permission is granted
         val locationPermissionGranted = ContextCompat.checkSelfPermission(
             this, android.Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
+
+        // Check if CHANGE_WIFI_STATE permission is granted
         val wifiStatePermissionGranted = ContextCompat.checkSelfPermission(
             this, android.Manifest.permission.CHANGE_WIFI_STATE
         ) == PackageManager.PERMISSION_GRANTED
 
+        // Create a list to store the permissions that are needed
         val permissionsNeeded = mutableListOf<String>()
 
+        // If Android version is 13 (API level 33) or higher, check for NEARBY_WIFI_DEVICES permission
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val nearbyWifiDevicesPermissionGranted = ContextCompat.checkSelfPermission(
+                this, android.Manifest.permission.NEARBY_WIFI_DEVICES
+            ) == PackageManager.PERMISSION_GRANTED
+
+            // Add NEARBY_WIFI_DEVICES permission if not granted
+            if (!nearbyWifiDevicesPermissionGranted) {
+                permissionsNeeded.add(android.Manifest.permission.NEARBY_WIFI_DEVICES)
+            }
+        }
+
+        // If location permission is not granted, add it to the permissions list
         if (!locationPermissionGranted) {
             permissionsNeeded.add(android.Manifest.permission.ACCESS_FINE_LOCATION)
         }
 
+        // If Wi-Fi state permission is not granted, add it to the permissions list
         if (!wifiStatePermissionGranted) {
             permissionsNeeded.add(android.Manifest.permission.CHANGE_WIFI_STATE)
         }
 
+        // If there are permissions that still need to be requested, request them
         if (permissionsNeeded.isNotEmpty()) {
             ActivityCompat.requestPermissions(
                 this, permissionsNeeded.toTypedArray(), LOCATION_PERMISSIONS_REQUEST_CODE
             )
         } else {
-            // All permissions are granted, proceed with Wi-Fi P2P operations
+            // All necessary permissions are granted, proceed with your operation
             //onPermissionsGranted()
+            Log.d(TAG, "onPermissionsGranted")
+            checkAndPromptLocationServices()
         }
     }
 
@@ -354,7 +378,11 @@ class MainActivity : AppCompatActivity(), View.OnClickListener,
                                 if (data.isNotEmpty()) {
                                     // Switch to Main thread to update UI
                                     lifecycleScope.launch(Dispatchers.Main) {
-                                        createImageView(this@MainActivity, imageView = imgShowImageResult, base64String = data)
+                                        createImageView(
+                                            this@MainActivity,
+                                            imageView = imgShowImageResult,
+                                            base64String = data
+                                        )
                                     }
                                 }
                             }
@@ -371,7 +399,6 @@ class MainActivity : AppCompatActivity(), View.OnClickListener,
 
             R.id.main_activity_button_client_start -> {
                 selectImage()
-
 
 
             }
@@ -434,8 +461,8 @@ class MainActivity : AppCompatActivity(), View.OnClickListener,
 
                 base64String = byteArray?.let { it1 -> convertByteArrayToBase64(it1) }.toString()
 
-                lifecycleScope.launch{
-                    ClientSocket( base64String).sendData()
+                lifecycleScope.launch {
+                    ClientSocket(base64String).sendData()
                 }
             }
         }
@@ -463,12 +490,11 @@ class MainActivity : AppCompatActivity(), View.OnClickListener,
             val bitmap = decodeBase64ToBitmap(base64String, 800, 800)
             Log.d(TAG, "createImageView: 459")
             if (bitmap != null) {
-                withContext(Dispatchers.Main){
-                    imgShowImageResult.visibility=View.VISIBLE
+                withContext(Dispatchers.Main) {
+                    imgShowImageResult.visibility = View.VISIBLE
                     // Use Glide to handle bitmap loading into the ImageView
                     Glide.with(context).asBitmap().override(800, 800).load(bitmap)
-                        .into(object : BitmapImageViewTarget(imageView) {
-                        })
+                        .into(object : BitmapImageViewTarget(imageView) {})
                 }
             } else {
                 Toast.makeText(context, "Failed to decode image", Toast.LENGTH_SHORT).show()
@@ -533,5 +559,28 @@ class MainActivity : AppCompatActivity(), View.OnClickListener,
         draw(canvas)
         return bitmap
     }
+
+    private fun checkAndPromptLocationServices() {
+        // Get the LocationManager system service
+        val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+
+        // Check if any location provider (GPS or network) is enabled
+        val isLocationEnabled =
+            locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) || locationManager.isProviderEnabled(
+                LocationManager.NETWORK_PROVIDER
+            )
+
+        if (!isLocationEnabled) {
+            // Location is off, prompt the user to turn it on
+            Toast.makeText(
+                this, "Location is disabled. Please enable location services.", Toast.LENGTH_SHORT
+            ).show()
+
+            // Redirect the user to the Location settings screen
+            val intent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+            startActivity(intent)
+        }
+    }
+
 }
 
